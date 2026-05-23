@@ -77,6 +77,13 @@ NBCOIN_TELEGRAM_CHAT_ID=你的Telegram聊天ID
 sudo systemctl restart nbcoin-vps
 ```
 
+可以先发送一条测试消息：
+
+```sh
+cd /opt/nbcoin-auto-miner
+env $(cat vps/nbcoin.env | xargs) npm run vps:test-telegram
+```
+
 未配置 Telegram 时，脚本会照常运行，只是不发送手机通知。
 
 ## 手动运行
