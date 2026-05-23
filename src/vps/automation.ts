@@ -1,10 +1,11 @@
 import { mkdir, appendFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { isMiningText, nextRunFromCountdown, parseCountdownToMs } from "../shared/mining.js";
+import { nextRunFromCountdown, parseCountdownToMs } from "../shared/mining.js";
 import { MINING_URL, MiningSnapshot, NBCOIN_HOST, RunResult } from "../shared/types.js";
 import { VpsAccountConfig, VpsConfig } from "./types.js";
 import { TelegramNotifier } from "./telegram.js";
+import { formatBeijingTime } from "./time.js";
 
 type BrowserContextLike = {
   newPage(): Promise<PageLike>;
@@ -15,6 +16,7 @@ type PageLike = {
   goto(url: string, options?: Record<string, unknown>): Promise<unknown>;
   waitForTimeout(ms: number): Promise<void>;
   evaluate<T>(pageFunction: string | (() => T | Promise<T>), arg?: unknown): Promise<T>;
+  screenshot(options: Record<string, unknown>): Promise<Buffer>;
   close(): Promise<void>;
   isClosed(): boolean;
 };
@@ -79,12 +81,12 @@ export class VpsAutomationService {
       if (snapshot.pageKind === "login" || snapshot.hasPasswordInput) {
         const password = this.resolvePassword(account);
         if (!password) {
-          return await this.needsManual(account, "没有找到密码。请设置 passwordEnv 对应的环境变量。");
+          return await this.needsManual(account, "没有找到密码。请设置 passwordEnv 对应的环境变量。", page);
         }
         await this.updateAccount(account, "loggingIn", "检测到登录页，正在自动登录。");
         const didLogin = await this.performLogin(page, account.username, password);
         if (!didLogin) {
-          return await this.needsManual(account, "自动填写或点击登录失败。");
+          return await this.needsManual(account, "自动填写或点击登录失败。", page);
         }
         await page.goto(MINING_URL, { waitUntil: "domcontentloaded", timeout: 45000 });
         await page.waitForTimeout(2500);
@@ -92,11 +94,7 @@ export class VpsAutomationService {
       }
 
       if (snapshot.hasCaptchaHint) {
-        return await this.needsManual(account, "检测到验证码或人机验证。");
-      }
-
-      if (snapshot.hasStartButton) {
-        return await this.clickStartAndConfirm(account, page);
+        return await this.needsManual(account, "检测到验证码或人机验证。", page);
       }
 
       const countdownMs = parseCountdownToMs(snapshot.countdownText);
@@ -107,12 +105,17 @@ export class VpsAutomationService {
         return this.result(account, "waitingCountdown", snapshot.countdownText, nextRunAt, "等待倒计时结束");
       }
 
+      if (snapshot.hasStartButton) {
+        return await this.clickStartAndConfirm(account, page);
+      }
+
       return await this.waitForStartButton(account, page, snapshot);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const screenshotPath = await this.captureScreenshot(account, page, "failed");
       await this.updateAccount(account, "failed", message);
       await this.log(account, "error", message);
-      await this.telegram.sendFailure(account, message);
+      await this.telegram.sendFailure(account, message, screenshotPath);
       return this.result(account, "failed", null, null, message);
     } finally {
       if (!page.isClosed()) await page.close();
@@ -174,7 +177,7 @@ export class VpsAutomationService {
 
   private async waitForStartButton(account: VpsAccountConfig, page: PageLike, initialSnapshot: MiningSnapshot): Promise<RunResult> {
     if (!initialSnapshot.hasMiningButton && !initialSnapshot.hasStartButton && !initialSnapshot.countdownText) {
-      return await this.needsManual(account, `没有读到倒计时或按钮。页面片段：${initialSnapshot.textSample ?? "未知"}`);
+      return await this.needsManual(account, `没有读到倒计时或按钮。页面片段：${initialSnapshot.textSample ?? "未知"}`, page);
     }
 
     await this.updateAccount(account, "waitingStartButton", "倒计时已结束，等待 Start 按钮出现。", null);
@@ -182,21 +185,22 @@ export class VpsAutomationService {
 
     while (Date.now() < deadline) {
       const snapshot = await this.readSnapshot(page);
-      if (snapshot.hasStartButton) {
-        return await this.clickStartAndConfirm(account, page);
-      }
-
-      const nextRunAt = nextRunFromCountdown(snapshot.countdownText);
-      if (nextRunAt && isMiningText(snapshot.buttonText)) {
+      const countdownMs = parseCountdownToMs(snapshot.countdownText);
+      if (countdownMs !== null && countdownMs > 0) {
+        const nextRunAt = nextRunFromCountdown(snapshot.countdownText);
         await this.updateAccount(account, "waitingCountdown", `等待倒计时结束：${snapshot.countdownText}`, nextRunAt);
         await this.log(account, "info", `重新读到倒计时 ${snapshot.countdownText}，已安排北京时间 ${formatBeijingTime(nextRunAt)}`);
         return this.result(account, "waitingCountdown", snapshot.countdownText, nextRunAt, "等待倒计时结束");
       }
 
+      if (snapshot.hasStartButton) {
+        return await this.clickStartAndConfirm(account, page);
+      }
+
       await delay(this.config.settings.pollIntervalSeconds * 1000);
     }
 
-    return await this.needsManual(account, `${this.config.settings.maxStartWaitMinutes} 分钟内没有等到 Start 按钮。`);
+    return await this.needsManual(account, `${this.config.settings.maxStartWaitMinutes} 分钟内没有等到 Start 按钮。`, page);
   }
 
   private async clickStartAndConfirm(account: VpsAccountConfig, page: PageLike): Promise<RunResult> {
@@ -208,7 +212,14 @@ export class VpsAutomationService {
           const rect = el.getBoundingClientRect();
           return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
         };
-        const candidates = Array.from(document.querySelectorAll('button, [role="button"], a, div')).filter(visible);
+        const clickable = (el) => {
+          const tag = el.tagName.toLowerCase();
+          const role = (el.getAttribute('role') || '').toLowerCase();
+          const className = String(el.className || '');
+          const style = window.getComputedStyle(el);
+          return tag === 'button' || tag === 'a' || role === 'button' || style.cursor === 'pointer' || /\\b(btn|button|van-button|adm-button)\\b/i.test(className) || typeof el.onclick === 'function';
+        };
+        const candidates = Array.from(document.querySelectorAll('button, [role="button"], a, div, span')).filter((el) => visible(el) && clickable(el));
         const target = candidates.find((el) => (el.innerText || '').trim().toLowerCase() === 'start');
         if (!target) return false;
         target.scrollIntoView({ block: 'center', inline: 'center' });
@@ -219,7 +230,7 @@ export class VpsAutomationService {
     );
 
     if (!clicked) {
-      return await this.needsManual(account, "找到 Start 状态后点击失败。");
+      return await this.needsManual(account, "找到 Start 状态后点击失败。", page);
     }
 
     let snapshot = await this.readSnapshot(page);
@@ -292,8 +303,16 @@ export class VpsAutomationService {
         const nonZeroCountdowns = visibleCountdowns.filter((item) => item.seconds > 0);
         const selectedCountdown = (nonZeroCountdowns.length ? nonZeroCountdowns : visibleCountdowns)
           .sort((a, b) => b.seconds - a.seconds)[0]?.value || null;
-        const elements = Array.from(document.querySelectorAll('button, [role="button"], a, div, span')).filter(isVisible);
+        const elements = Array.from(document.querySelectorAll('button, [role="button"], a, input[type="button"], input[type="submit"], div, span')).filter(isVisible);
+        const isClickable = (el) => {
+          const tag = el.tagName.toLowerCase();
+          const role = (el.getAttribute('role') || '').toLowerCase();
+          const className = String(el.className || '');
+          const style = window.getComputedStyle(el);
+          return tag === 'button' || tag === 'a' || tag === 'input' || role === 'button' || style.cursor === 'pointer' || /\\b(btn|button|van-button|adm-button)\\b/i.test(className) || typeof el.onclick === 'function';
+        };
         const buttonTexts = elements
+          .filter(isClickable)
           .map((el) => (el.innerText || '').trim())
           .filter(Boolean)
           .filter((value) => value.length <= 40);
@@ -322,11 +341,30 @@ export class VpsAutomationService {
     );
   }
 
-  private async needsManual(account: VpsAccountConfig, message: string): Promise<RunResult> {
+  private async needsManual(account: VpsAccountConfig, message: string, page?: PageLike): Promise<RunResult> {
+    const screenshotPath = page ? await this.captureScreenshot(account, page, "needs-manual") : null;
     await this.updateAccount(account, "needsManual", message);
     await this.log(account, "warn", message);
-    await this.telegram.sendFailure(account, message);
+    await this.telegram.sendFailure(account, message, screenshotPath);
     return this.result(account, "needsManual", null, null, message);
+  }
+
+  private async captureScreenshot(account: VpsAccountConfig, page: PageLike, reason: string): Promise<string | null> {
+    try {
+      const safeReason = reason.replace(/[^a-z0-9-]/gi, "-").toLowerCase();
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const screenshotsDir = path.join(this.dataDir, "screenshots");
+      await mkdir(screenshotsDir, { recursive: true });
+      const screenshotPath = path.join(screenshotsDir, `${account.id}-${safeReason}-${stamp}.png`);
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      account.lastScreenshotPath = screenshotPath;
+      await this.saveConfig();
+      return screenshotPath;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.log(account, "warn", `保存异常截图失败：${message}`);
+      return null;
+    }
   }
 
   private async updateAccount(account: VpsAccountConfig, status: VpsAccountConfig["lastStatus"], message: string, nextRunAt = account.nextRunAt): Promise<void> {
@@ -341,7 +379,7 @@ export class VpsAutomationService {
     const line = `${formatBeijingTime(new Date().toISOString())} ${level} ${account ? `[${account.label}] ` : ""}${message}`;
     console.log(line);
     await mkdir(path.dirname(this.logFile), { recursive: true });
-    await appendFile(this.logFile, `${line}\\n`);
+    await appendFile(this.logFile, `${line}\n`);
   }
 
   private result(account: VpsAccountConfig, status: RunResult["status"], countdownText: string | null, nextRunAt: string | null, message: string): RunResult {
@@ -354,18 +392,4 @@ export class VpsAutomationService {
       timestamp: new Date().toISOString()
     };
   }
-}
-
-export function formatBeijingTime(value: string | null | undefined): string {
-  if (!value) return "待识别";
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  }).format(new Date(value));
 }
