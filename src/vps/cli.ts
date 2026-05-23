@@ -64,6 +64,16 @@ async function main(): Promise<void> {
 }
 
 function scheduleLoop(config: Awaited<ReturnType<typeof loadVpsConfig>>, service: VpsAutomationService): void {
+  const hasWaitingStart = config.accounts.some((account) => account.enabled && account.lastStatus === "waitingStartButton");
+  if (hasWaitingStart) {
+    console.log("有账号正在等待 Start，2 秒后继续检查。");
+    setTimeout(async () => {
+      await service.runDueAccounts();
+      scheduleLoop(config, service);
+    }, 2000);
+    return;
+  }
+
   const next = config.accounts
     .filter((account) => account.enabled && account.nextRunAt)
     .map((account) => ({ account, time: new Date(account.nextRunAt as string).getTime() }))
