@@ -12,7 +12,11 @@ const defaultConfig: VpsConfig = {
     maxStartWaitMinutes: 10,
     accountIntervalSeconds: 20,
     autoRefreshOnStart: true,
-    maxRetryAttempts: 2
+    maxRetryAttempts: 2,
+    monitorEnabled: true,
+    monitorHost: "0.0.0.0",
+    monitorPort: 8787,
+    monitorPasswordEnv: "NBCOIN_MONITOR_PASSWORD"
   },
   accounts: []
 };
