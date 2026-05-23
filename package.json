@@ -1,0 +1,28 @@
+{
+  "name": "nbcoin-auto-miner",
+  "version": "0.1.15",
+  "description": "VPS automation tool for NBCOIN mining",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "vps": "npm run build && node dist/src/vps/cli.js",
+    "vps:start": "node dist/src/vps/cli.js",
+    "vps:once": "npm run build && node dist/src/vps/cli.js --once"
+  },
+  "keywords": [
+    "automation",
+    "nbcoin",
+    "vps",
+    "playwright"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "playwright": "^1.60.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.0"
+  }
+}
