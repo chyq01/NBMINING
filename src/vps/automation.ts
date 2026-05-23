@@ -45,6 +45,7 @@ export class VpsAutomationService {
     const now = Date.now();
     const dueAccounts = this.config.accounts.filter((account) => {
       if (!account.enabled) return false;
+      if (account.lastStatus === "waitingStartButton") return true;
       if (!account.nextRunAt) return this.config.settings.autoRefreshOnStart;
       return new Date(account.nextRunAt).getTime() <= now;
     });
@@ -95,6 +96,10 @@ export class VpsAutomationService {
 
       if (snapshot.hasCaptchaHint) {
         return await this.needsManual(account, "检测到验证码或人机验证。", page);
+      }
+
+      if (snapshot.hasCompletedReward) {
+        return await this.markAlreadyCompleted(account, snapshot);
       }
 
       const countdownMs = parseCountdownToMs(snapshot.countdownText);
@@ -182,9 +187,14 @@ export class VpsAutomationService {
 
     await this.updateAccount(account, "waitingStartButton", "倒计时已结束，等待 Start 按钮出现。", null);
     const deadline = Date.now() + this.config.settings.maxStartWaitMinutes * 60 * 1000;
+    let pollCount = 0;
 
     while (Date.now() < deadline) {
       const snapshot = await this.readSnapshot(page);
+      if (snapshot.hasCompletedReward) {
+        return await this.markAlreadyCompleted(account, snapshot);
+      }
+
       const countdownMs = parseCountdownToMs(snapshot.countdownText);
       if (countdownMs !== null && countdownMs > 0) {
         const nextRunAt = nextRunFromCountdown(snapshot.countdownText);
@@ -197,6 +207,13 @@ export class VpsAutomationService {
         return await this.clickStartAndConfirm(account, page);
       }
 
+      if (pollCount > 0 && pollCount % 15 === 0) {
+        await this.log(account, "info", "仍未看到 Start，刷新挖矿页后继续等待。");
+        await page.goto(MINING_URL, { waitUntil: "domcontentloaded", timeout: 45000 });
+        await page.waitForTimeout(2500);
+      }
+
+      pollCount += 1;
       await delay(this.config.settings.pollIntervalSeconds * 1000);
     }
 
@@ -219,11 +236,24 @@ export class VpsAutomationService {
           const style = window.getComputedStyle(el);
           return tag === 'button' || tag === 'a' || role === 'button' || style.cursor === 'pointer' || /\\b(btn|button|van-button|adm-button)\\b/i.test(className) || typeof el.onclick === 'function';
         };
-        const candidates = Array.from(document.querySelectorAll('button, [role="button"], a, div, span')).filter((el) => visible(el) && clickable(el));
-        const target = candidates.find((el) => (el.innerText || '').trim().toLowerCase() === 'start');
-        if (!target) return false;
+        const candidates = Array.from(document.querySelectorAll('button, [role="button"], a, div, span'))
+          .filter(visible)
+          .filter((el) => (el.innerText || el.textContent || '').trim().toLowerCase() === 'start')
+          .sort((a, b) => {
+            const ar = a.getBoundingClientRect();
+            const br = b.getBoundingClientRect();
+            return (ar.width * ar.height) - (br.width * br.height);
+          });
+        const textNode = candidates[0];
+        if (!textNode) return false;
+        const target = textNode.closest('button, [role="button"], a') || textNode;
         target.scrollIntoView({ block: 'center', inline: 'center' });
-        target.click();
+        const rect = target.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+          target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }));
+        }
         return true;
       })()
       `
@@ -250,6 +280,14 @@ export class VpsAutomationService {
     await this.log(account, "info", `已点击 Start，下一次北京时间 ${formatBeijingTime(nextRunAt)}`);
     await this.telegram.sendSuccess(account, nextRunAt);
     return this.result(account, "miningStarted", snapshot.countdownText, nextRunAt, "已开始挖矿");
+  }
+
+  private async markAlreadyCompleted(account: VpsAccountConfig, snapshot: MiningSnapshot): Promise<RunResult> {
+    const nextRunAt = nextRunFromCountdown(snapshot.countdownText) ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    await this.updateAccount(account, "miningStarted", "页面显示 Mining Reward Completed，已视为签到成功。", nextRunAt);
+    await this.log(account, "info", `页面显示已完成签到，下一次北京时间 ${formatBeijingTime(nextRunAt)}`);
+    await this.telegram.sendSuccess(account, nextRunAt);
+    return this.result(account, "miningStarted", snapshot.countdownText, nextRunAt, "页面显示已完成签到");
   }
 
   private async readSnapshot(page: PageLike): Promise<MiningSnapshot> {
@@ -304,20 +342,13 @@ export class VpsAutomationService {
         const selectedCountdown = (nonZeroCountdowns.length ? nonZeroCountdowns : visibleCountdowns)
           .sort((a, b) => b.seconds - a.seconds)[0]?.value || null;
         const elements = Array.from(document.querySelectorAll('button, [role="button"], a, input[type="button"], input[type="submit"], div, span')).filter(isVisible);
-        const isClickable = (el) => {
-          const tag = el.tagName.toLowerCase();
-          const role = (el.getAttribute('role') || '').toLowerCase();
-          const className = String(el.className || '');
-          const style = window.getComputedStyle(el);
-          return tag === 'button' || tag === 'a' || tag === 'input' || role === 'button' || style.cursor === 'pointer' || /\\b(btn|button|van-button|adm-button)\\b/i.test(className) || typeof el.onclick === 'function';
-        };
         const buttonTexts = elements
-          .filter(isClickable)
           .map((el) => (el.innerText || '').trim())
           .filter(Boolean)
           .filter((value) => value.length <= 40);
         const hasStartButton = buttonTexts.some((value) => value.toLowerCase() === 'start');
         const miningButton = buttonTexts.find((value) => value.toLowerCase().includes('mining')) || null;
+        const hasCompletedReward = /Mining\\s+Reward\\s+Completed/i.test(text) || /挖矿奖励\\s*已完成/i.test(text);
         const hasCaptchaHint = /captcha|verify|verification|human|滑块|验证码|人机/i.test(text);
         const looksLogin = hasPasswordInput || /login|sign in|登录/i.test(text);
         const looksMining = host === ${JSON.stringify(NBCOIN_HOST)} && (url.includes('#/mining') || /\\bMining\\b/i.test(text) || selectedCountdown || hasStartButton || miningButton);
@@ -334,6 +365,7 @@ export class VpsAutomationService {
           hasMiningButton: Boolean(miningButton),
           hasPasswordInput,
           hasCaptchaHint,
+          hasCompletedReward,
           textSample: text.replace(/\\s+/g, ' ').trim().slice(0, 260)
         };
       })()
