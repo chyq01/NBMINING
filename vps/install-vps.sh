@@ -73,6 +73,7 @@ if [[ ! -f vps/nbcoin.env ]]; then
   cat >vps/nbcoin.env <<'ENV'
 # 在这里填写账号密码环境变量，变量名要和 vps/accounts.json 里的 passwordEnv 一致
 NBCOIN_PASSWORD_1=请改成你的密码
+NBCOIN_MONITOR_PASSWORD=请改成监控面板密码
 ENV
   chmod 600 vps/nbcoin.env
 fi
@@ -86,3 +87,4 @@ echo "1. 编辑 ${APP_DIR}/vps/accounts.json"
 echo "2. 编辑 ${APP_DIR}/vps/nbcoin.env"
 echo "3. 启动服务：systemctl start ${SERVICE_NAME}"
 echo "4. 查看日志：journalctl -u ${SERVICE_NAME} -f"
+echo "5. 监控面板：http://你的VPS-IP:8787"
