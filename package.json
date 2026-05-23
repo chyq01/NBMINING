@@ -6,10 +6,12 @@
   "private": true,
   "scripts": {
     "build": "tsc",
+    "test": "npm run build && node --test dist/tests/*.test.js",
     "vps": "npm run build && node dist/src/vps/cli.js",
     "vps:start": "node dist/src/vps/cli.js",
     "vps:once": "npm run build && node dist/src/vps/cli.js --once",
-    "vps:test-telegram": "npm run build && node dist/src/vps/cli.js --test-telegram"
+    "vps:test-telegram": "npm run build && node dist/src/vps/cli.js --test-telegram",
+    "vps:doctor": "npm run build && node dist/src/vps/cli.js --doctor"
   },
   "keywords": [
     "automation",
