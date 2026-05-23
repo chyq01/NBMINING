@@ -37,6 +37,7 @@ export async function loadVpsConfig(filePath: string): Promise<VpsConfig> {
         nextRunAt: account.nextRunAt ?? null,
         lastStatus: account.lastStatus ?? "loggedOut",
         lastMessage: account.lastMessage ?? null,
+        lastScreenshotPath: account.lastScreenshotPath ?? null,
         updatedAt: account.updatedAt ?? new Date().toISOString()
       }))
     };
