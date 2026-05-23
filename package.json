@@ -8,7 +8,8 @@
     "build": "tsc",
     "vps": "npm run build && node dist/src/vps/cli.js",
     "vps:start": "node dist/src/vps/cli.js",
-    "vps:once": "npm run build && node dist/src/vps/cli.js --once"
+    "vps:once": "npm run build && node dist/src/vps/cli.js --once",
+    "vps:test-telegram": "npm run build && node dist/src/vps/cli.js --test-telegram"
   },
   "keywords": [
     "automation",
