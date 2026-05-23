@@ -1,0 +1,24 @@
+{
+  "settings": {
+    "dataDir": "vps-data",
+    "headless": true,
+    "pollIntervalSeconds": 2,
+    "maxStartWaitMinutes": 10,
+    "accountIntervalSeconds": 20,
+    "autoRefreshOnStart": true,
+    "maxRetryAttempts": 2
+  },
+  "accounts": [
+    {
+      "id": "account-1",
+      "label": "账号1",
+      "username": "your-email@example.com",
+      "passwordEnv": "NBCOIN_PASSWORD_1",
+      "enabled": true,
+      "nextRunAt": null,
+      "lastStatus": "loggedOut",
+      "lastMessage": null,
+      "updatedAt": "2026-05-23T00:00:00.000Z"
+    }
+  ]
+}
