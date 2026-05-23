@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 import { DEFAULT_VPS_CONFIG_PATH, loadVpsConfig, resolveDataPath, saveVpsConfig } from "./config.js";
-import { VpsAutomationService, formatBeijingTime } from "./automation.js";
+import { VpsAutomationService } from "./automation.js";
 import { VpsRunOptions } from "./types.js";
 import { startMonitorServer } from "./monitor.js";
 import { TelegramNotifier } from "./telegram.js";
+import { runDoctor } from "./doctor.js";
+import { formatBeijingTime } from "./time.js";
 
 const args = process.argv.slice(2);
 
@@ -19,6 +21,7 @@ function parseOptions(): { configPath: string; options: VpsRunOptions } {
     options: {
       once: args.includes("--once"),
       testTelegram: args.includes("--test-telegram"),
+      doctor: args.includes("--doctor"),
       accountId: readOption("--account")
     }
   };
@@ -32,6 +35,12 @@ async function main(): Promise<void> {
 
   if (options.testTelegram) {
     await new TelegramNotifier().sendTest();
+    return;
+  }
+
+  if (options.doctor) {
+    const ok = await runDoctor(configPath, config, dataDir);
+    if (!ok) process.exitCode = 1;
     return;
   }
 
@@ -49,6 +58,7 @@ async function main(): Promise<void> {
 
   console.log(`NBCOIN VPS 自动签到已启动。配置：${configPath}`);
   startMonitorServer(config, () => saveVpsConfig(configPath, config), dataDir);
+  new TelegramNotifier().startCommandLoop(config);
   await service.runDueAccounts();
   scheduleLoop(config, service);
 }
