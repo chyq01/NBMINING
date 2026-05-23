@@ -31,6 +31,16 @@ export class TelegramNotifier {
     );
   }
 
+  async sendTest(): Promise<void> {
+    await this.send(
+      [
+        "NBCOIN Telegram 测试",
+        `时间：${formatBeijingTime(new Date().toISOString())}`,
+        "如果你收到这条消息，说明 VPS 推送配置正常。"
+      ].join("\n")
+    );
+  }
+
   private async send(text: string): Promise<void> {
     if (!this.token || !this.chatId) return;
     try {
