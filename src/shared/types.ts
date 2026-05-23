@@ -12,6 +12,54 @@ export type MiningState =
   | "needsManual"
   | "failed";
 
+export interface AccountConfig {
+  id: string;
+  label: string;
+  username: string;
+  enabled: boolean;
+  siteUrl: string;
+  sessionPartition: string;
+  lastStatus: MiningState;
+  nextRunAt: string | null;
+  lastMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AutomationSettings {
+  certificateWhitelist: string[];
+  pollIntervalSeconds: number;
+  maxStartWaitMinutes: number;
+  accountIntervalSeconds: number;
+  schedulerIntervalSeconds: number;
+  launchAtLogin: boolean;
+  paused: boolean;
+  autoRefreshOnLaunch: boolean;
+  maxRetryAttempts: number;
+}
+
+export interface AppConfig {
+  accounts: AccountConfig[];
+  settings: AutomationSettings;
+  logs: AppLog[];
+}
+
+export interface AppLog {
+  id: string;
+  accountId: string | null;
+  level: "info" | "warn" | "error";
+  message: string;
+  timestamp: string;
+}
+
+export interface AccountInput {
+  id?: string;
+  label: string;
+  username: string;
+  password?: string;
+  enabled: boolean;
+}
+
 export interface RunResult {
   accountId: string;
   status: MiningState;
@@ -30,5 +78,23 @@ export interface MiningSnapshot {
   hasMiningButton: boolean;
   hasPasswordInput: boolean;
   hasCaptchaHint: boolean;
+  hasCompletedReward?: boolean;
   textSample: string | null;
+}
+
+export interface PageDiagnostic {
+  accountId: string;
+  accountLabel: string;
+  snapshot: MiningSnapshot;
+  message: string;
+  timestamp: string;
+}
+
+export interface PublicState {
+  accounts: AccountConfig[];
+  settings: AutomationSettings;
+  logs: AppLog[];
+  isRunning: boolean;
+  runningAccountIds: string[];
+  appVersion: string;
 }
