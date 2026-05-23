@@ -10,6 +10,7 @@ export interface VpsAccountConfig {
   nextRunAt: string | null;
   lastStatus: MiningState;
   lastMessage: string | null;
+  lastScreenshotPath?: string | null;
   updatedAt: string;
 }
 
@@ -35,5 +36,6 @@ export interface VpsConfig {
 export interface VpsRunOptions {
   once: boolean;
   testTelegram: boolean;
+  doctor: boolean;
   accountId?: string;
 }
