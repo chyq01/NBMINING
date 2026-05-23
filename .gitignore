@@ -1,0 +1,17 @@
+node_modules/
+dist/
+release/
+*.dmg
+.DS_Store
+npm-debug.log*
+
+# Local VPS runtime data and secrets
+vps/accounts.json
+vps/vps-data/
+vps-data/
+.env
+*.log
+
+# Native macOS build artifacts
+NativeAutoCheckin/.build/
+NativeAutoCheckin/dist/
