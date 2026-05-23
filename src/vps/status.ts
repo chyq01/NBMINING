@@ -13,18 +13,22 @@ const statusLabels: Record<string, string> = {
 };
 
 export function formatStatusMessage(config: VpsConfig): string {
+  const now = Date.now();
   const enabledAccounts = config.accounts.filter((account) => account.enabled);
+  const dueAccounts = enabledAccounts.filter((account) => account.lastStatus === "waitingStartButton" || (account.nextRunAt && new Date(account.nextRunAt).getTime() <= now));
   const nextWake = enabledAccounts
     .filter((account) => account.nextRunAt)
     .map((account) => ({ account, time: new Date(account.nextRunAt as string).getTime() }))
-    .filter((item) => Number.isFinite(item.time))
+    .filter((item) => Number.isFinite(item.time) && item.time > now)
     .sort((a, b) => a.time - b.time)[0];
 
   const lines = [
     "NBCOIN VPS 状态",
     `北京时间：${formatBeijingTime(new Date().toISOString())}`,
     `账号：${config.accounts.length} 个，启用 ${enabledAccounts.length} 个`,
-    nextWake
+    dueAccounts.length
+      ? `下次唤醒：已有 ${dueAccounts.length} 个账号到点，正在/即将处理`
+      : nextWake
       ? `下次唤醒：${formatBeijingTime(nextWake.account.nextRunAt)}（${nextWake.account.label}，剩余 ${formatRemainingText(nextWake.account.nextRunAt)}）`
       : "下次唤醒：待识别",
     ""
