@@ -21,6 +21,10 @@ export interface VpsSettings {
   accountIntervalSeconds: number;
   autoRefreshOnStart: boolean;
   maxRetryAttempts: number;
+  monitorEnabled: boolean;
+  monitorHost: string;
+  monitorPort: number;
+  monitorPasswordEnv?: string;
 }
 
 export interface VpsConfig {
