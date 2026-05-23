@@ -4,6 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { isMiningText, nextRunFromCountdown, parseCountdownToMs } from "../shared/mining.js";
 import { MINING_URL, MiningSnapshot, NBCOIN_HOST, RunResult } from "../shared/types.js";
 import { VpsAccountConfig, VpsConfig } from "./types.js";
+import { TelegramNotifier } from "./telegram.js";
 
 type BrowserContextLike = {
   newPage(): Promise<PageLike>;
@@ -27,6 +28,7 @@ const dynamicImport = new Function("specifier", "return import(specifier)") as (
 export class VpsAutomationService {
   private readonly dataDir: string;
   private readonly logFile: string;
+  private readonly telegram = new TelegramNotifier();
 
   constructor(
     private readonly config: VpsConfig,
@@ -110,6 +112,7 @@ export class VpsAutomationService {
       const message = error instanceof Error ? error.message : String(error);
       await this.updateAccount(account, "failed", message);
       await this.log(account, "error", message);
+      await this.telegram.sendFailure(account, message);
       return this.result(account, "failed", null, null, message);
     } finally {
       if (!page.isClosed()) await page.close();
@@ -234,6 +237,7 @@ export class VpsAutomationService {
       nextRunAt
     );
     await this.log(account, "info", `已点击 Start，下一次北京时间 ${formatBeijingTime(nextRunAt)}`);
+    await this.telegram.sendSuccess(account, nextRunAt);
     return this.result(account, "miningStarted", snapshot.countdownText, nextRunAt, "已开始挖矿");
   }
 
@@ -321,6 +325,7 @@ export class VpsAutomationService {
   private async needsManual(account: VpsAccountConfig, message: string): Promise<RunResult> {
     await this.updateAccount(account, "needsManual", message);
     await this.log(account, "warn", message);
+    await this.telegram.sendFailure(account, message);
     return this.result(account, "needsManual", null, null, message);
   }
 
@@ -336,7 +341,7 @@ export class VpsAutomationService {
     const line = `${formatBeijingTime(new Date().toISOString())} ${level} ${account ? `[${account.label}] ` : ""}${message}`;
     console.log(line);
     await mkdir(path.dirname(this.logFile), { recursive: true });
-    await appendFile(this.logFile, `${line}\n`);
+    await appendFile(this.logFile, `${line}\\n`);
   }
 
   private result(account: VpsAccountConfig, status: RunResult["status"], countdownText: string | null, nextRunAt: string | null, message: string): RunResult {
