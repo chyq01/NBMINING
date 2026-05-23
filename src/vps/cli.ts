@@ -2,6 +2,7 @@
 import { DEFAULT_VPS_CONFIG_PATH, loadVpsConfig, resolveDataPath, saveVpsConfig } from "./config.js";
 import { VpsAutomationService, formatBeijingTime } from "./automation.js";
 import { VpsRunOptions } from "./types.js";
+import { startMonitorServer } from "./monitor.js";
 
 const args = process.argv.slice(2);
 
@@ -40,6 +41,7 @@ async function main(): Promise<void> {
   }
 
   console.log(`NBCOIN VPS 自动签到已启动。配置：${configPath}`);
+  startMonitorServer(config, () => saveVpsConfig(configPath, config), dataDir);
   await service.runDueAccounts();
   scheduleLoop(config, service);
 }
