@@ -3,6 +3,7 @@ import { DEFAULT_VPS_CONFIG_PATH, loadVpsConfig, resolveDataPath, saveVpsConfig 
 import { VpsAutomationService, formatBeijingTime } from "./automation.js";
 import { VpsRunOptions } from "./types.js";
 import { startMonitorServer } from "./monitor.js";
+import { TelegramNotifier } from "./telegram.js";
 
 const args = process.argv.slice(2);
 
@@ -17,6 +18,7 @@ function parseOptions(): { configPath: string; options: VpsRunOptions } {
     configPath: readOption("--config") ?? process.env.NBCOIN_CONFIG ?? DEFAULT_VPS_CONFIG_PATH,
     options: {
       once: args.includes("--once"),
+      testTelegram: args.includes("--test-telegram"),
       accountId: readOption("--account")
     }
   };
@@ -27,6 +29,11 @@ async function main(): Promise<void> {
   const config = await loadVpsConfig(configPath);
   const dataDir = resolveDataPath(configPath, config.settings.dataDir);
   const service = new VpsAutomationService(config, () => saveVpsConfig(configPath, config), dataDir);
+
+  if (options.testTelegram) {
+    await new TelegramNotifier().sendTest();
+    return;
+  }
 
   if (options.accountId) {
     const account = config.accounts.find((item) => item.id === options.accountId || item.label === options.accountId || item.username === options.accountId);
