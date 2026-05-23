@@ -74,6 +74,8 @@ if [[ ! -f vps/nbcoin.env ]]; then
 # 在这里填写账号密码环境变量，变量名要和 vps/accounts.json 里的 passwordEnv 一致
 NBCOIN_PASSWORD_1=请改成你的密码
 NBCOIN_MONITOR_PASSWORD=请改成监控面板密码
+NBCOIN_TELEGRAM_BOT_TOKEN=
+NBCOIN_TELEGRAM_CHAT_ID=
 ENV
   chmod 600 vps/nbcoin.env
 fi
