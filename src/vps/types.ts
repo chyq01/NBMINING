@@ -34,5 +34,6 @@ export interface VpsConfig {
 
 export interface VpsRunOptions {
   once: boolean;
+  testTelegram: boolean;
   accountId?: string;
 }
